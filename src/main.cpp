@@ -1,10 +1,11 @@
-
-#include "Arduino.h"
-
 /**
  * HC-SR501 presence detector with ESP8266 (Wemos D1 mini with ESP-12E)
+ *
+ * @see https://github.com/Treboada/esp-mqtt_presence
  * @author Rafa Couto <caligari@treboada.net>
  */
+
+#include "Arduino.h"
 
 #define PIN_LED 2 // gpio02 (D4)
 #define PIN_PIR 4 // gpio04 (D2)
@@ -20,34 +21,41 @@ void setup() {
 
 void loop() {
 
+    static unsigned long seconds = 0;
+    static unsigned long next_now = 1000;
+
     unsigned long now = millis();
-    int seconds = now / 1000;
-    static int last_second = 0;
+    if (now >= next_now) {
+        next_now = now + 1000;
+        seconds++;
+    }
 
     if (seconds < CALIBRATION_SECONDS) {
 
-        // calibration time (1 minute)
+        // fast blink while in calibration time
         unsigned long half = now % 250;
         digitalWrite(PIN_LED, half < 125 ? LOW : HIGH);
     }
     else {
 
-        static int triggered = 0;
+        static unsigned int triggered = 0;
 
         if (triggered > seconds) {
 
-            // alarm is on
+            // alarm on
             digitalWrite(PIN_LED, LOW); // led is low-activated
         }
         else {
 
-            // alarm is off
+            // alarm off
             digitalWrite(PIN_LED, HIGH); // led is low-activated
         }
 
+        // read the sensor
         bool presence = (digitalRead(PIN_PIR) == HIGH);
         if (presence) {
 
+            // set the alarm on
             triggered = seconds + ALARM_SECONDS;
         }
     }
