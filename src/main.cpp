@@ -16,7 +16,7 @@
 #define CALIBRATION_SECONDS 60 // according to datasheet
 #define ALARM_SECONDS 3 // time to alarm the presence with the led
 
-#define WIFI_SSID "........"
+#define WIFI_SSID "RecunchoMaker"
 #define WIFI_PASS "........"
 
 #define MQTT_TOPIC "recuncho/caramonina/sensors/presence/01"
@@ -37,7 +37,7 @@ void mqtt_publish(bool presence) {
     } else {
 
         // try connection
-        if (client.connect("oneClient")) {
+        if (client.connect("ESP-170052")) {
             mqtt_ok = true;
         }
     }
