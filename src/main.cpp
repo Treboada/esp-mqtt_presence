@@ -81,26 +81,26 @@ void loop() {
     else {
 
         static unsigned int triggered = 0;
+        bool led_on;
 
         if (triggered > seconds) {
 
             // alarm on
-            digitalWrite(PIN_LED, LOW); // led is low-activated
-        }
-        else {
+            led_on = true;
+
+        } else {
 
             // alarm off
-            int led = HIGH; // led is low-activated
+            led_on = false;
 
+            // little blink (20ms/5s) indicating the wifi connection
             if (connected) {
-
-                // little blink (20ms/5s) indicating the wifi connection
                 partial = now % 5000;
-                if (partial < 20) led = LOW;
+                if (partial < 20) led_on = true;
             }
-
-            digitalWrite(PIN_LED, led);
         }
+
+        digitalWrite(PIN_LED, led_on ? LOW : HIGH); // led is low-activated
 
         // read the sensor
         bool presence = (digitalRead(PIN_PIR) == HIGH);
@@ -109,10 +109,9 @@ void loop() {
 
             // set the alarm on
             triggered = seconds + ALARM_SECONDS;
-
         }
 
-        // send event
+        // send the presence changes as MQTT events
         if (connected && presence ^ published) {
 
             mqtt_publish(presence);
