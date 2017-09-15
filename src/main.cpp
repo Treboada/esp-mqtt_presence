@@ -8,7 +8,6 @@
 #include "Arduino.h"
 #include <PubSubClient.h>
 #include <ESP8266WiFi.h>
-#include <WiFiClient.h>
 
 #define PIN_LED 2 // gpio02 (D4)
 #define PIN_PIR 4 // gpio04 (D2)
@@ -16,14 +15,22 @@
 #define CALIBRATION_SECONDS 60 // according to datasheet
 #define ALARM_SECONDS 3 // time to alarm the presence with the led
 
-#define WIFI_SSID "RecunchoMaker"
-#define WIFI_PASS "........"
-
+#define MQTT_SERVER "mqtt.vpn.recunchomaker.org"
+#define MQTT_PORT 1883
 #define MQTT_TOPIC "recuncho/caramonina/sensors/presence/01"
 
 WiFiClient wclient;
 IPAddress server(10, 27, 0, 103);
-PubSubClient client(server, 1883, wclient);
+PubSubClient client(server, MQTT_PORT, wclient);
+//PubSubClient client(MQTT_SERVER, MQTT_PORT, wclient);
+
+static char mqtt_client_name[] = "esp-123456";
+
+void setup_mqtt_client_name() {
+    uint8_t mac[6];
+    WiFi.macAddress(mac);
+    sprintf(mqtt_client_name, "esp-%02x%02x%02x", mac[3], mac[4], mac[5]);
+}
 
 void mqtt_publish(bool presence) {
 
@@ -37,7 +44,7 @@ void mqtt_publish(bool presence) {
     } else {
 
         // try connection
-        if (client.connect("ESP-170052")) {
+        if (client.connect(mqtt_client_name)) {
             mqtt_ok = true;
         }
     }
@@ -56,33 +63,36 @@ void setup() {
 
     WiFi.mode(WIFI_STA);
     WiFi.begin(WIFI_SSID, WIFI_PASS);
+
+    setup_mqtt_client_name();
 }
 
 void loop() {
 
+    bool led_on;
+    bool connected = (WiFi.status() == WL_CONNECTED);
+
+    // time managing
     static unsigned long seconds = 0;
     static unsigned long next_now = 1000;
     unsigned long partial;
-
-    bool connected = (WiFi.status() == WL_CONNECTED);
-
     unsigned long now = millis();
     if (now >= next_now) {
         next_now = now + 1000;
         seconds++;
     }
 
+    // calibration
     if (seconds < CALIBRATION_SECONDS) {
 
         // fast blink while in calibration time
         partial = now % 250;
-        digitalWrite(PIN_LED, partial < 125 ? LOW : HIGH);
+        led_on = (partial < 125);
     }
     else {
 
+        // LED indications
         static unsigned int triggered = 0;
-        bool led_on;
-
         if (triggered > seconds) {
 
             // alarm on
@@ -100,11 +110,8 @@ void loop() {
             }
         }
 
-        digitalWrite(PIN_LED, led_on ? LOW : HIGH); // led is low-activated
-
         // read the sensor
         bool presence = (digitalRead(PIN_PIR) == HIGH);
-        static bool published = false;
         if (presence) {
 
             // set the alarm on
@@ -112,12 +119,16 @@ void loop() {
         }
 
         // send the presence changes as MQTT events
+        static bool published = false;
         if (connected && presence ^ published) {
 
             mqtt_publish(presence);
             published = !published;
         }
     }
+
+    // LED signal
+    digitalWrite(PIN_LED, led_on ? LOW : HIGH); // led is low-activated
 
     // wake up every 1/40 second
     delay(25);
