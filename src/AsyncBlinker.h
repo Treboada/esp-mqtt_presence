@@ -31,7 +31,7 @@ static const uint16_t _default_blink[2] = { 500, 500 };
  * Define a blinker instance, set the intervals and start it:
  *
  *     AsyncBlinker blinker(blink_my_led);
- *     blinker.setIntervals(fast_blink, sizeof(fast_blink));
+ *     blinker.setIntervals(fast_blink, sizeof(fast_blink) / 2);
  *     blinker.start();
  *
  * IMPORTANT: you must call tickUpdate(elapsed_time) in your main loop.
@@ -76,7 +76,7 @@ static const uint16_t _default_blink[2] = { 500, 500 };
  *         0, WORD_SEP                            // blank (18-19)
  *     };
  *
- *     AsyncBlinker sos_blinker(morse_tone, morse_sos, sizeof(morse_sos);
+ *     AsyncBlinker sos_blinker(morse_tone, morse_sos, sizeof(morse_sos) / 2);
  *     sos_blinker.start();
  *
  * By default it cycles intervals endlessly from the first to the last. You
@@ -112,8 +112,7 @@ class AsyncBlinker
         int start()
             { start(ENDLESSLY); }
 
-        void stop()
-            { _cycles = 0; }
+        void stop();
 
         bool tickUpdate(uint32_t elapsed_millis);
 
@@ -130,8 +129,6 @@ class AsyncBlinker
 
         uint32_t _past_millis;
         uint8_t _cycles;
-
-        bool _nextInterval();
 };
 
 #endif // _ASYNC_BLINKER_H

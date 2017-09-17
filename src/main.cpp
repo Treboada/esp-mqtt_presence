@@ -5,48 +5,47 @@
  * @author Rafa Couto <caligari@treboada.net>
  */
 
-#include <Arduino.h>
-#include <PubSubClient.h>
-#include <ESP8266WiFi.h>
-#include "AsyncBlinker.h"
+////////// config
 
 #define PIN_LED 2 // gpio02 (D4)
 #define PIN_PIR 4 // gpio04 (D2)
 
-#define CALIBRATION_SECONDS 60 // according to datasheet
-#define ALARM_SECONDS 3 // time to alarm the presence with the led
-
-// state machine
+#define CALIBRATION_SECONDS 5 // according to datasheet
+#define ALARM_SECONDS 5 // time to alarm the presence with the led
 
 #define MQTT_SERVER "mqtt.vpn.recunchomaker.org"
 #define MQTT_PORT 1883
 #define MQTT_TOPIC "recuncho/caramonina/sensors/presence/01"
 
-enum State : uint8_t {
-    STATE_NONE,
-    STATE_CALIBRATING,
-    STATE_SCANNING_WIFI_ON,
-    STATE_SCANNING_WIFI_OFF,
-    STATE_ALARMED
-};
+////////// libraries
 
-WiFiClient wclient;
-IPAddress server(10, 27, 0, 103);
-PubSubClient client(server, MQTT_PORT, wclient);
-//PubSubClient client(MQTT_SERVER, MQTT_PORT, wclient);
+#include <Arduino.h>
+#include <PubSubClient.h>
+#include <ESP8266WiFi.h>
+#include "AsyncBlinker.h"
+
+////////// wifi connection
+
+WiFiClient wifi_client;
+static bool connected;
+
+////////// led blinker
 
 const uint16_t calibration_blink[] = { 125, 125 };
-const uint16_t wifi_on_blink[] = { 20, 5000 };
-const uint16_t presence_blink[] = { ALARM_SECONDS * 1000, 0 };
+const uint16_t wifi_on_blink[] = { 10, 3000 };
 
-void blink_led(bool enable) {
-    // led is low-activated125:
-    digitalWrite(PIN_LED, enable ? LOW : HIGH);
+void set_led(bool enable) {
+    digitalWrite(PIN_LED, enable ? LOW : HIGH); // led is low-activated
 }
 
-AsyncBlinker blinker(blink_led);
+AsyncBlinker blinker(set_led);
+
+////////// mqtt
 
 static char mqtt_client_name[] = "esp-123456";
+IPAddress mqtt_server(10, 27, 0, 103);
+PubSubClient mqtt_client(mqtt_server, MQTT_PORT, wifi_client);
+//PubSubClient mqtt_client(MQTT_SERVER, MQTT_PORT, wifi_client);
 
 void setup_mqtt_client_name() {
     uint8_t mac[6];
@@ -58,7 +57,7 @@ void mqtt_publish(bool presence) {
 
     bool mqtt_ok = false;
 
-    if (client.connected()) {
+    if (mqtt_client.connected()) {
 
         // already connected
         mqtt_ok = true;
@@ -66,7 +65,7 @@ void mqtt_publish(bool presence) {
     } else {
 
         // try connection
-        if (client.connect(mqtt_client_name)) {
+        if (mqtt_client.connect(mqtt_client_name)) {
             mqtt_ok = true;
         }
     }
@@ -74,9 +73,47 @@ void mqtt_publish(bool presence) {
     if (mqtt_ok) {
 
         // publish the event
-        client.publish(MQTT_TOPIC, presence ? "1" : "0");
+        mqtt_client.publish(MQTT_TOPIC, presence ? "1" : "0");
     }
 }
+
+//////////
+
+enum State : uint8_t {
+    STATE_NONE,
+    STATE_CALIBRATING,
+    STATE_SCANNING_WIFI_ON,
+    STATE_SCANNING_WIFI_OFF,
+    STATE_ALARMED
+};
+
+static State state = STATE_NONE;
+static unsigned long system_seconds = 0;
+static unsigned long alarm_second;
+
+void state_changed(State from, State to) {
+
+    switch (to) {
+        case STATE_CALIBRATING:
+            blinker.setIntervals(calibration_blink, sizeof(calibration_blink) / 2);
+            blinker.start();
+            break;
+        case STATE_SCANNING_WIFI_ON:
+            blinker.setIntervals(wifi_on_blink, sizeof(wifi_on_blink) / 2);
+            blinker.start();
+            break;
+        default:
+            blinker.stop();
+    }
+
+    if (from == STATE_ALARMED || to == STATE_ALARMED) {
+        bool alarm_on = (to == STATE_ALARMED);
+        set_led(alarm_on);
+        mqtt_publish(alarm_on);
+    }
+}
+
+//////////
 
 void setup() {
 
@@ -87,60 +124,22 @@ void setup() {
     WiFi.begin(WIFI_SSID, WIFI_PASS);
 
     setup_mqtt_client_name();
-
-    blinker.setIntervals(calibration_blink, sizeof(calibration_blink));
-    blinker.start();
 }
 
-static State state = STATE_NONE;
-static unsigned long system_seconds = 0;
-static unsigned long alarm_second;
-
-void state_changed(State from, State to) {
-
-    blinker.stop();
-
-    switch (to) {
-
-        case STATE_CALIBRATING:
-            blinker.setIntervals(calibration_blink, sizeof(calibration_blink));
-            break;
-
-        case STATE_SCANNING_WIFI_OFF:
-            if (from == STATE_ALARMED) {
-                mqtt_publish(0);
-            }
-            break;
-
-        case STATE_SCANNING_WIFI_ON:
-            blinker.setIntervals(wifi_on_blink, sizeof(wifi_on_blink));
-            break;
-
-        case STATE_ALARMED:
-            alarm_second = system_seconds;
-            blinker.setIntervals(presence_blink, sizeof(presence_blink));
-            if (from == STATE_SCANNING_WIFI_ON) {
-                mqtt_publish(1);
-            }
-            break;
-    }
-
-    blinker.start();
-}
+//////////
 
 void loop() {
 
     // time managing
-    static unsigned long last_millis = 0;
-    unsigned long now_millis = millis();
-    unsigned long elapsed_millis = now_millis - last_millis;
-    if (now_millis / 1000 != system_seconds) {
-        system_seconds++;
-    }
+    static uint32_t last_millis = 0;
+    uint32_t now_millis = millis();
+    uint32_t elapsed_millis = now_millis - last_millis;
+    if ((last_millis / 1000) != (now_millis / 1000)) system_seconds++;
     last_millis = now_millis;
 
     // asyncronous updates
     blinker.tickUpdate(elapsed_millis);
+    connected = (WiFi.status() == WL_CONNECTED);
 
     // state machine changer
     static State last_state = STATE_NONE;
@@ -168,7 +167,6 @@ void loop() {
                 state = STATE_ALARMED;
             }
             else {
-                bool connected = (WiFi.status() == WL_CONNECTED);
                 if (connected && state == STATE_SCANNING_WIFI_OFF) {
                     state = STATE_SCANNING_WIFI_ON;
                 }
@@ -179,15 +177,18 @@ void loop() {
             break;
 
         case STATE_ALARMED:
-            if (system_seconds - alarm_second > ALARM_SECONDS) {
-                state = STATE_SCANNING_WIFI_OFF;
+            if (alarm_second != system_seconds) {
+                if (digitalRead(PIN_PIR) == HIGH) {
+                    alarm_second = system_seconds;
+                }
+                else if (system_seconds - alarm_second > ALARM_SECONDS) {
+                    state = STATE_SCANNING_WIFI_OFF;
+                }
             }
             break;
     }
 
-
-    // wake up every 1/40 second
-    delay(25);
-
+    // wake up every 1/100 second
+    delay(10);
 }
 

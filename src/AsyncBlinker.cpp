@@ -9,7 +9,7 @@
 AsyncBlinker::AsyncBlinker(Callback cb)
 {
     _callback = cb;
-    setIntervals(_default_blink, sizeof(_default_blink));
+    setIntervals(_default_blink, sizeof(_default_blink) / 2);
 }
 
 void AsyncBlinker::setIntervals(const uint16_t* intervals, uint8_t count)
@@ -31,6 +31,11 @@ int AsyncBlinker::start(uint8_t cycles, uint8_t from, uint8_t to)
     if (_callback && cycles > 0 && _intervals[from] > 0) _callback(true);
 }
 
+void AsyncBlinker::stop()
+{
+    _cycles = 0;
+}
+
 bool AsyncBlinker::tickUpdate(uint32_t elapsed_millis)
 {
     if (_cycles == 0) return false;
@@ -38,29 +43,18 @@ bool AsyncBlinker::tickUpdate(uint32_t elapsed_millis)
     _past_millis += elapsed_millis;
     while (_past_millis >= _intervals[_current]) {
 
-        if (!_nextInterval()) return false;
-
         _past_millis -= _intervals[_current];
+
+        if (++_current > _to) {
+            _current = _from;
+            if (_cycles != ENDLESSLY && --_cycles <= 0) return false;
+        }
+
+        if (_callback && (_intervals[_current] > 0)) {
+            _callback(_current % 2 == 0);
+        }
     }
 
     return true;
 }
-
-bool AsyncBlinker::_nextInterval()
-{
-    if (++_current > _to) {
-
-        if (_cycles != ENDLESSLY && --_cycles == 0) return false;
-
-        _current = _from;
-    }
-
-    if (_callback && _intervals[_current] > 0) {
-
-        _callback(_current % 2 == 0 ? true : false);
-    }
-
-    return true;
-}
-
 
