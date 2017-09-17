@@ -10,8 +10,8 @@
 #define PIN_LED 2 // gpio02 (D4)
 #define PIN_PIR 4 // gpio04 (D2)
 
-#define CALIBRATION_SECONDS 5 // according to datasheet
-#define ALARM_SECONDS 5 // time to alarm the presence with the led
+#define CALIBRATION_SECONDS 60 // according to datasheet
+#define ALARM_SECONDS 60 // time to alarm the presence
 
 #define MQTT_SERVER "mqtt.vpn.recunchomaker.org"
 #define MQTT_PORT 1883
